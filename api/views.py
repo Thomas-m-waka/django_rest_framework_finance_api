@@ -15,7 +15,7 @@ from rest_framework.permissions import AllowAny
 from django.db.models import Sum
 from .utils import calculate_total_income, calculate_total_expenses
 from rest_framework.exceptions import PermissionDenied
-
+from rest_framework.decorators import api_view
 
 # api/views.py
 
@@ -41,25 +41,43 @@ class RegistrationView(generics.CreateAPIView):
 
 
 
-class LoginView(APIView):
-    permission_classes = [AllowAny]
+# class LoginView(APIView):
+#     permission_classes = [AllowAny]
 
+#     def post(self, request):
+#         username = request.data.get('username')
+#         password = request.data.get('password')
+#         user = authenticate(request, username=username, password=password)
+#         if user is not None:
+#             return Response({
+#                 'message': 'Login successful',
+#                 'user': {
+#                     'username': user.username,
+#                     'email': user.email,
+#                 }
+#             }, status=status.HTTP_200_OK)
+#         else:
+#             return Response({
+#                 'error': 'Invalid username or password'
+#             }, status=status.HTTP_400_BAD_REQUEST)
+
+
+from django.contrib.auth import authenticate
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.authtoken.models import Token
+
+class ObtainAuthToken(APIView):
     def post(self, request):
         username = request.data.get('username')
         password = request.data.get('password')
-        user = authenticate(request, username=username, password=password)
-        if user is not None:
-            return Response({
-                'message': 'Login successful',
-                'user': {
-                    'username': user.username,
-                    'email': user.email,
-                }
-            }, status=status.HTTP_200_OK)
-        else:
-            return Response({
-                'error': 'Invalid username or password'
-            }, status=status.HTTP_400_BAD_REQUEST)
+        user = authenticate(username=username, password=password)
+
+        if user:
+            token, created = Token.objects.get_or_create(user=user)
+            return Response({'token': token.key}, status=status.HTTP_200_OK)
+        return Response({'error': 'Invalid Credentials'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 

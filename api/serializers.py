@@ -10,6 +10,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = ['phone_number', 'gender', 'occupation', 'date_of_birth']
+        read_only_fields = ['user']
     
     def validate_phone_number(self, value):
         if len(value) != 10 or not value.startswith('0'):
@@ -31,6 +32,7 @@ class RegistrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['username', 'email', 'password', 'profile']
+        read_only_fields = ['user']
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -60,6 +62,7 @@ class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
         fields = ['id', 'user',  'amount', 'transaction_type', 'payment_method', 'category']
+        read_only_fields = ['user']
 
     def create(self, validated_data):
         # Automatically assign the user from the request
@@ -78,6 +81,7 @@ class DebtSerializer(serializers.ModelSerializer):
     class Meta:
         model = Debt
         fields = '__all__'
+        read_only_fields = ['user']
     def validate_amount(self, value):
         # Ensure the amount is a positive integer
         if value <= 0:
@@ -88,6 +92,7 @@ class DebtRepaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = DebtRepayment
         fields = '__all__'
+        read_only_fields = ['user']
 
     def validate(self, attrs):
         debt = attrs['debt']
@@ -110,6 +115,7 @@ class FinancialGoalSerializer(serializers.ModelSerializer):
     class Meta:
         model = FinancialGoal
         fields = '__all__'
+        read_only_fields = ['user']
     def validate_amount(self, value):
         # Ensure the amount is a positive integer
         if value <= 0:
