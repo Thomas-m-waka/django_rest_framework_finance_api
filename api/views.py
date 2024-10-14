@@ -104,6 +104,14 @@ class TransactionDetailView(generics.RetrieveUpdateDestroyAPIView):
         instance.delete()
 
 
+class TransactionListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        transactions = Transaction.objects.filter(user=request.user)
+        serializer = TransactionSerializer(transactions, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class DebtListCreateView(generics.ListCreateAPIView):
     serializer_class = DebtSerializer

@@ -77,6 +77,13 @@ class TransactionSerializer(serializers.ModelSerializer):
 
 
 
+class TransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Transaction
+        fields = '__all__'  
+        read_only_fields = ['user']
+
+
 class DebtSerializer(serializers.ModelSerializer):
     class Meta:
         model = Debt

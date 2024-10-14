@@ -12,7 +12,7 @@ urlpatterns = [
 
     path('transactions/', TransactionListCreateView.as_view(), name='transaction_list_create'),  # List and create transactions
     path('transactions/<int:pk>/', TransactionDetailView.as_view(), name='transaction_detail'),
-    
+    path('view_transactions/', TransactionListView.as_view(), name='transaction-list'),
     path('debts/', DebtListCreateView.as_view(), name='debt-list-create'),
     path('debts/<int:pk>/', DebtRetrieveUpdateDestroyView.as_view(), name='debt-detail'),
 
