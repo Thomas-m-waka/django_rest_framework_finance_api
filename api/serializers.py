@@ -1,9 +1,17 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Profile,Debt,DebtRepayment,FinancialGoal
+from .models import *
+from  .serializers import *
 from  datetime import date
-from .models import Transaction
 from rest_framework import serializers
+
+
+class AccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Account
+        fields = '__all__'
+        read_only_fields = ['user']
+
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -13,9 +21,6 @@ class ProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ['user']
     
     def validate_phone_number(self, value):
-        if len(value) != 10 or not value.startswith('0'):
-            raise serializers.ValidationError("Phone number must be 10 digits long and start with '0'.")
-        
         if Profile.objects.filter(phone_number=value).exists():
             raise serializers.ValidationError("This phone number is already in use.")
         
@@ -39,12 +44,11 @@ class RegistrationSerializer(serializers.ModelSerializer):
         profile_data = validated_data.pop('profile')
         user = User(**validated_data)
         user.set_password(validated_data['password'])
-        user.save()  # Save user to the database
-        Profile.objects.create(user=user, **profile_data)  # Create profile
-        return user  # Return the user instance
+        user.save()  
+        Profile.objects.create(user=user, **profile_data)  
+        return user  
     
     def validate_profile(self, value):
-        # Validate the date of birth in the profile
         self.validate_date_of_birth(value.get('date_of_birth'))
         return value
 
@@ -57,31 +61,33 @@ class RegistrationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A user with this email already exists.")
         return value
 
+class AccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Account
+        fields = '__all__'
+        read_only_fields = ['user']
+
+
+class TotalBalanceSerializer(serializers.Serializer):
+    total_balance = serializers.DecimalField(max_digits=10, decimal_places=2)
+    read_only_fields = ['user']
 
 class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
-        fields = ['id', 'user',  'amount', 'transaction_type', 'payment_method', 'category']
-        read_only_fields = ['user']
+        fields = ['id', 'user', 'account', 'amount', 'transaction_type', 'category', 'date']
+        read_only_fields = ['user', 'date']
 
-    def create(self, validated_data):
-        # Automatically assign the user from the request
-        user = validated_data.pop('user')
-        return Transaction.objects.create(user=user, **validated_data)
+    def validate(self, attrs):
+        account = attrs.get('account')
+        amount = attrs.get('amount')
+        transaction_type = attrs.get('transaction_type')
 
-    def validate_amount(self, value):
-        # Ensure the amount is a positive integer
-        if value <= 0:
-            raise serializers.ValidationError("The amount must be a positive integer.")
-        return value    
+        if transaction_type == 'expense' and amount > account.amount:
+            raise serializers.ValidationError("Insufficient funds in the selected account for this expense.")
 
+        return attrs
 
-
-class TransactionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Transaction
-        fields = '__all__'  
-        read_only_fields = ['user']
 
 
 class DebtSerializer(serializers.ModelSerializer):
@@ -89,8 +95,11 @@ class DebtSerializer(serializers.ModelSerializer):
         model = Debt
         fields = '__all__'
         read_only_fields = ['user']
+    def validate_debt(self, value):
+        if value.user != self.context['request'].user:
+            raise serializers.ValidationError("You do not have permission to repay this debt.")
+        return value        
     def validate_amount(self, value):
-        # Ensure the amount is a positive integer
         if value <= 0:
             raise serializers.ValidationError("The amount must be a positive integer.")
         return value
@@ -98,22 +107,36 @@ class DebtSerializer(serializers.ModelSerializer):
 class DebtRepaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = DebtRepayment
-        fields = '__all__'
-        read_only_fields = ['user']
+        fields = ['debt', 'account', 'amount']
 
-    def validate(self, attrs):
-        debt = attrs['debt']
-        amount = attrs['amount']
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None) 
+        super().__init__(*args, **kwargs)
+        if user:
+            self.fields['account'].queryset = Account.objects.filter(user=user)
 
-        # Ensure the amount is a positive integer
-        if amount <= 0:
-            raise serializers.ValidationError("The repayment amount must be a positive integer.")
+    def validate_account(self, value):
+        user = self.context['request'].user
+        if value.user != user:
+            raise serializers.ValidationError("You can only use your own account for this repayment.")
+        return value
 
-        # Check if repayment amount exceeds the remaining debt amount
-        if amount > debt.amount:
+    def validate(self, data):
+        debt = data['debt']
+        if not Debt.objects.filter(id=debt.id).exists():
+            raise serializers.ValidationError("Debt does not exist.")
+
+        
+        if not Account.objects.filter(id=data['account'].id, user=self.context['request'].user).exists():
+            raise serializers.ValidationError("You can only repay using your own account.")
+        
+        
+        if data['amount'] > debt.amount:
             raise serializers.ValidationError("Repayment amount cannot exceed the remaining debt amount.")
         
-        return attrs
+        return data
+
+
 
     
 
@@ -124,10 +147,27 @@ class FinancialGoalSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['user']
     def validate_amount(self, value):
-        # Ensure the amount is a positive integer
         if value <= 0:
             raise serializers.ValidationError("The amount must be a positive integer.")
         return value        
     
+
+class PasswordResetSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        if not User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("No user found with this email address.")
+        return value
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    new_password = serializers.CharField(write_only=True, required=True)
+
+    def validate_new_password(self, value):
+        if len(value) < 8:  
+            raise serializers.ValidationError("Password must be at least 8 characters long.")
+        return value
+
 
 

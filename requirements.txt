@@ -5,8 +5,12 @@ certifi==2024.8.30
 charset-normalizer==3.4.0
 config==0.5.1
 Django==5.1.2
+django-cors-headers==4.5.0
+django-phonenumber-field==8.0.0
+django-phonenumbers==1.0.1
 djangorestframework==3.15.2
 djangorestframework-simplejwt==5.3.1
+drf-yasg==1.21.8
 google-ai-generativelanguage==0.6.10
 google-api-core==2.21.0
 google-api-python-client==2.149.0
@@ -18,8 +22,12 @@ grpcio==1.66.2
 grpcio-status==1.66.2
 httplib2==0.22.0
 idna==3.10
+inflection==0.5.1
+packaging==24.1
+phonenumbers==8.13.47
 proto-plus==1.24.0
 protobuf==5.28.2
+psycopg2-binary==2.9.10
 pyasn1==0.6.1
 pyasn1_modules==0.4.1
 pydantic==2.9.2
@@ -27,6 +35,8 @@ pydantic_core==2.23.4
 PyJWT==2.9.0
 pyparsing==3.1.4
 python-dotenv==1.0.1
+pytz==2024.2
+PyYAML==6.0.2
 requests==2.32.3
 rsa==4.9
 sqlparse==0.5.1

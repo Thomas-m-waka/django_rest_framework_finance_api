@@ -1,23 +1,27 @@
 from rest_framework import generics
-from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from.serializers import *
-from .serializers import RegistrationSerializer,TransactionSerializer,DebtSerializer,DebtRepaymentSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.permissions import IsAuthenticated
-from .models import Transaction,Debt,DebtRepayment
-from django.contrib.auth import authenticate
-from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from django.db.models import Sum
 from .utils import calculate_total_income, calculate_total_expenses
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.decorators import api_view
+from django.contrib.auth import authenticate
+from rest_framework.authtoken.models import Token
+from django.contrib.auth.models import User
+from django.utils.http import urlsafe_base64_decode
+from django.utils.encoding import force_str
+from django.contrib.auth.tokens import default_token_generator
+from .serializers import PasswordResetConfirmSerializer
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
 
-# api/views.py
+
 
 
 class RegistrationView(generics.CreateAPIView):
@@ -41,33 +45,6 @@ class RegistrationView(generics.CreateAPIView):
 
 
 
-# class LoginView(APIView):
-#     permission_classes = [AllowAny]
-
-#     def post(self, request):
-#         username = request.data.get('username')
-#         password = request.data.get('password')
-#         user = authenticate(request, username=username, password=password)
-#         if user is not None:
-#             return Response({
-#                 'message': 'Login successful',
-#                 'user': {
-#                     'username': user.username,
-#                     'email': user.email,
-#                 }
-#             }, status=status.HTTP_200_OK)
-#         else:
-#             return Response({
-#                 'error': 'Invalid username or password'
-#             }, status=status.HTTP_400_BAD_REQUEST)
-
-
-from django.contrib.auth import authenticate
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.authtoken.models import Token
-
 class ObtainAuthToken(APIView):
     def post(self, request):
         username = request.data.get('username')
@@ -79,6 +56,27 @@ class ObtainAuthToken(APIView):
             return Response({'token': token.key}, status=status.HTTP_200_OK)
         return Response({'error': 'Invalid Credentials'}, status=status.HTTP_400_BAD_REQUEST)
 
+
+class AccountListCreateView(generics.ListCreateAPIView):
+    serializer_class = AccountSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Account.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+class TotalAccountBalanceView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        total_balance = Account.objects.filter(user=request.user).aggregate(total_balance=Sum('amount'))['total_balance'] or 0.00
+        
+        data = TotalBalanceSerializer(data={'total_balance': total_balance})
+        data.is_valid(raise_exception=True)
+
+        return Response(data.data)
 
 
 class TransactionListCreateView(generics.ListCreateAPIView):
@@ -150,17 +148,28 @@ class DebtRepaymentListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return DebtRepayment.objects.filter(debt__user=self.request.user)
+        return DebtRepayment.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
-        repayment = serializer.save()
-        debt = repayment.debt
+        user = self.request.user
+        debt = serializer.validated_data['debt']  # Access the debt from validated data
 
-        # Update the debt amount
-        debt.amount -= repayment.amount
-        debt.save()
+        
+        if debt.user != user:
+            raise serializers.ValidationError("You cannot repay a debt that does not belong to you.")
 
+        repayment = serializer.save(user=user)
+
+        
+        debt.amount -= repayment.amount  
+
+        if debt.amount <= 0:
+            debt.amount = 0  
+            debt.status = 'paid'
+
+        debt.save() 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 
 
@@ -175,7 +184,7 @@ class FinancialSummaryView(APIView):
         return Response({
             'total_income': total_income,
             'total_expenses': total_expenses,
-            'net_income': total_income - total_expenses,
+            
         })
     
 
@@ -202,84 +211,58 @@ class FinancialGoalDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 
-# from .models import PasswordResetToken  # Make sure to import your model
-# from .serializers import VerifyCodeSerializer  # Import your serializer for code verification
+class PasswordResetView(generics.GenericAPIView):
+    serializer_class = PasswordResetSerializer
 
-# class VerifyVerificationCodeView(generics.GenericAPIView):
-#     serializer_class = VerifyCodeSerializer
-
-#     def post(self, request):
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         user = serializer.validated_data['user']  # Get the user from the serializer
-#         verification_code = serializer.validated_data['verification_code']
-
-#         # Verify the code
-#         verified_user = verify_verification_code(user, verification_code)
-#         if verified_user:
-#             return Response({"detail": "Verification successful."}, status=status.HTTP_200_OK)
-#         return Response({"detail": "Invalid or expired verification code."}, status=status.HTTP_400_BAD_REQUEST)
-
-
-
-# import requests
-# import json
-# from django.conf import settings
-
-# def send_sms(phone_number, message):
-#     url = "https://sms.textsms.co.ke/api/services/sendsms"
-#     payload = {
-#         "mobile": f'+254{phone_number}',  # Ensure the phone number is in the correct format
-#         "response_type": "json",
-#         "partnerID": '10338',  # Your partner ID
-#         "shortcode": 'TextSMS',  # Your shortcode
-#         'apikey': settings.SMS_API_KEY,  # Store your API key in settings
-#         "message": message
-#     }
-#     headers = {
-#         'Content-Type': 'application/json'
-#     }
-    
-#     try:
-#         response = requests.post(url, headers=headers, data=json.dumps(payload))
-#         response_data = response.json()
-        
-#         # Check for success
-#         if response.status_code == 200 and response_data.get('status') == 'success':
-#             return True  # SMS sent successfully
-#         else:
-#             # Log or handle failure response
-#             print(f"Failed to send SMS: {response_data.get('message')}")
-#             return False
-#     except requests.exceptions.RequestException as e:
-#         # Handle request exceptions
-#         print(f"Error sending SMS: {str(e)}")
-#         return False
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            user = User.objects.get(email=email)
+            token = default_token_generator.make_token(user)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            
+            # Update the link to point to your local server
+            link = f"http://127.0.0.1:8000/api/reset-password/{uid}/{token}/"  # Adjust this based on your URL pattern
+            
+            # Send email
+            send_mail(
+                'Password Reset Request',
+                render_to_string('api/password_reset_email.html', {'link': link}),
+                'thomasmuteti4@gmail.com',
+                [email],
+                fail_silently=False,
+            )
+            return Response({"message": "Password reset link has been sent."}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-# import random
-# from django.utils import timezone
 
-# def generate_verification_code():
-#     # Generate a random 6-digit verification code
-#     return random.randint(100000, 999999)
 
-# def send_verification_code(user):
-#     # Retrieve the user's profile
-#     profile = get_object_or_404(Profile, user=user)
-    
-#     # Generate a verification code
-#     verification_code = generate_verification_code()
+class PasswordResetConfirmView(generics.GenericAPIView):
+    serializer_class = PasswordResetConfirmSerializer
 
-#     # Save the verification code to the PasswordResetToken model
-#     reset_token = PasswordResetToken.objects.create(
-#         user=user,
-#         verification_code=verification_code,
-#         created_at=timezone.now()
-#     )
+    def post(self, request, uidb64, token):
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            user = None
 
-#     # Send the verification code via SMS
-#     message = f"Your verification code is: {verification_code}"
-#     send_sms(profile.phone_number, message)
+        if user is not None and default_token_generator.check_token(user, token):
+            serializer = self.get_serializer(data=request.data)
+            if serializer.is_valid():
+                new_password = serializer.validated_data['new_password']
+                user.set_password(new_password)
+                user.save()
+                
+                # Invalidate existing tokens
+                Token.objects.filter(user=user).delete()
+                
+                # Create a new token if required
+                token, created = Token.objects.get_or_create(user=user)
 
-#     return reset_token
+                return Response({"message": "Password has been reset.", "token": token.key}, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({"error": "Invalid token or user."}, status=status.HTTP_400_BAD_REQUEST)
