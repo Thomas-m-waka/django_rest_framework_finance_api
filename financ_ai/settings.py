@@ -119,17 +119,23 @@ load_dotenv()
 SECRET_KEY = os.environ.get('SECRET_KEY')
 DEBUG = True#os.environ.get('DEBUG') == 'True'  
 
-
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DATABASE_NAME'),
-        'USER': os.environ.get('DATABASE_USER'),
-        'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
-        'HOST': os.environ.get('DATABASE_HOST'),
-        'PORT': os.environ.get('DATABASE_PORT'),
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / "db.sqlite3",
     }
 }
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': os.environ.get('DATABASE_NAME'),
+#         'USER': os.environ.get('DATABASE_USER'),
+#         'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
+#         'HOST': os.environ.get('DATABASE_HOST'),
+#         'PORT': os.environ.get('DATABASE_PORT'),
+#     }
+# }
 
 
 EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND')

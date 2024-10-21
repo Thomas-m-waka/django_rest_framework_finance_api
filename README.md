@@ -12,3 +12,5 @@ runserver  while on the file // Make sure you  can seee the file(manage.py)
 python3 manage.py runserver 
 
 urls to  be connceted using react are in  api/urls.py file 
+
+sudo systemctl status postgresql
