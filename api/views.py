@@ -5,6 +5,8 @@ from.serializers import *
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.decorators import action
+from rest_framework import viewsets
 from rest_framework.permissions import AllowAny
 from django.db.models import Sum
 from .utils import calculate_total_income, calculate_total_expenses
@@ -20,7 +22,10 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes, force_str
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
-
+from django.conf import settings
+from rest_framework import viewsets
+from django.conf import settings
+import google.generativeai as genai
 
 
 
@@ -31,7 +36,7 @@ class RegistrationView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()  # Save the user and return the user instance
+        user = serializer.save()  
 
         return Response({
             'user': {
@@ -222,10 +227,10 @@ class PasswordResetView(generics.GenericAPIView):
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             
-            # Update the link to point to your local server
-            link = f"http://127.0.0.1:8000/api/reset-password/{uid}/{token}/"  # Adjust this based on your URL pattern
             
-            # Send email
+            link = f"http://127.0.0.1:8000/api/reset-password/{uid}/{token}/"  
+            
+            
             send_mail(
                 'Password Reset Request',
                 render_to_string('api/password_reset_email.html', {'link': link}),
@@ -266,3 +271,82 @@ class PasswordResetConfirmView(generics.GenericAPIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response({"error": "Invalid token or user."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+genai.configure(api_key=settings.GEMINI_API_KEY)
+
+
+generation_config = {
+    "temperature": 0,
+    "top_p": 0.95,
+    "top_k": 64,
+    "max_output_tokens": 8192,
+    "response_mime_type": "text/plain",
+}
+
+model = genai.GenerativeModel(
+    model_name="gemini-1.5-flash",
+    generation_config=generation_config,
+    system_instruction="You're a financial and savings advisor named Finny. Your function is to give the best savings advice and expenditure advice based on the income the user gives you. Be fun also.",
+)
+
+class ChatViewSet(viewsets.ViewSet):
+    history = []  
+
+    @action(detail=False, methods=['post'])
+    def send_chat(self, request):
+        user_input = request.data.get('message')
+        user = request.user  
+
+        
+        if "profile" in user_input.lower():
+            response_text = self.get_profile_info(user)
+        elif "debt" in user_input.lower():
+            response_text = self.get_debt_info(user)
+        elif "transaction" in user_input.lower():
+            response_text = self.get_transaction_info(user)
+        elif "financial goal" in user_input.lower():
+            response_text = self.get_financial_goal_info(user)
+        else:
+            
+            response = model.start_chat(history=self.history).send_message(user_input)
+            response_text = response.text
+
+        
+        self.history.append({"role": "user", "parts": [user_input]})
+        self.history.append({"role": "model", "parts": [response_text]})
+
+        return Response({'response': response_text})
+
+    def get_profile_info(self, user):
+        profile = user.profile
+        return (
+            f"User Profile:\n"
+            f"Gender: {profile.gender}\n"
+            f"Occupation: {profile.occupation}\n"
+            f"Date of Birth: {profile.date_of_birth}"
+        )
+
+    def get_debt_info(self, user):
+        debts = user.debts.all()
+        if not debts:
+            return "You have no debts."
+        debt_list = "\n".join(f"{debt.debt_type}: {debt.amount}" for debt in debts)
+        return f"Your debts:\n{debt_list}"
+
+    def get_transaction_info(self, user):
+        transactions = user.transactions.all()
+        if not transactions:
+            return "You have no transactions."
+        transaction_list = "\n".join(f"{trans.transaction_type}: {trans.amount} on {trans.date}" for trans in transactions)
+        return f"Your transactions:\n{transaction_list}"
+
+    def get_financial_goal_info(self, user):
+        goals = user.financial_goals.all()
+        if not goals:
+            return "You have no financial goals."
+        goal_list = "\n".join(f"{goal.description}: {goal.amount_needed} in {goal.duration_weeks} weeks" for goal in goals)
+        return f"Your financial goals:\n{goal_list}"

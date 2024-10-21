@@ -39,7 +39,7 @@ urlpatterns = [
     path('financial-summary/', FinancialSummaryView.as_view(), name='financial-summary'),
     path('financial-goals/', FinancialGoalListCreateView.as_view(), name='financial-goal-list-create'),
     path('financial-goals/<int:pk>/', FinancialGoalDetailView.as_view(), name='financial-goal-detail'),
-
+    path('chat/send_chat/', ChatViewSet.as_view({'post': 'send_chat'}), name='chatbot'),  
 
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),

@@ -117,7 +117,7 @@ load_dotenv()
 
 
 SECRET_KEY = os.environ.get('SECRET_KEY')
-DEBUG = os.environ.get('DEBUG') == 'True'  
+DEBUG = True#os.environ.get('DEBUG') == 'True'  
 
 
 DATABASES = {
@@ -141,4 +141,5 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL')
 
 
+GEMINI_API_KEY = os.environ.get('GERMINI_API_KEY')
 
