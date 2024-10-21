@@ -93,7 +93,8 @@ class Transaction(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     transaction_type = models.CharField(max_length=7, choices=TRANSACTION_TYPE)
     category = models.CharField(max_length=50, choices=INCOME_CATEGORIES + EXPENSE_CATEGORIES)
-
+    description = models.CharField(max_length=100, blank=True)
+    
     def save(self, *args, **kwargs):
         if self.transaction_type == 'expense':
             if self.amount > self.account.amount:

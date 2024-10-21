@@ -75,7 +75,7 @@ class TotalBalanceSerializer(serializers.Serializer):
 class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
-        fields = ['id', 'user', 'account', 'amount', 'transaction_type', 'category', 'date']
+        fields = ['id', 'user', 'account', 'amount', 'transaction_type', 'category','description', 'date']
         read_only_fields = ['user', 'date']
 
     def validate(self, attrs):
