@@ -28,6 +28,7 @@ urlpatterns = [
     path('reset-password/<uidb64>/<token>/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),  
     path('token/', ObtainAuthToken.as_view(), name='obtain_token'), 
     path('accounts/', AccountListCreateView.as_view(), name='account-list-create'),
+    path('accounts/<int:pk>/', AccountDetailView.as_view(), name='account-detail'),
     path('total-account-balance/', TotalAccountBalanceView.as_view(), name='total-account-balance'),
     path('transactions/', TransactionListCreateView.as_view(), name='transaction_list_create'),
     path('transactions/<int:pk>/', TransactionDetailView.as_view(), name='transaction_detail'),
@@ -40,6 +41,7 @@ urlpatterns = [
     path('financial-goals/', FinancialGoalListCreateView.as_view(), name='financial-goal-list-create'),
     path('financial-goals/<int:pk>/', FinancialGoalDetailView.as_view(), name='financial-goal-detail'),
     path('chat/send_chat/', ChatViewSet.as_view({'post': 'send_chat'}), name='chatbot'),  
+    path('monthly-financial-report/', GenerateMonthlyFinancialReportView.as_view(), name='monthly-financial-report'),
 
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),

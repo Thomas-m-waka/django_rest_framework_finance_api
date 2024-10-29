@@ -26,7 +26,7 @@ from django.conf import settings
 from rest_framework import viewsets
 from django.conf import settings
 import google.generativeai as genai
-
+from rest_framework import permissions
 
 
 class RegistrationView(generics.CreateAPIView):
@@ -71,6 +71,27 @@ class AccountListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class AccountDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Account.objects.all()
+    serializer_class = AccountSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return self.queryset.filter(user=self.request.user)
+
+    def delete(self, request, *args, **kwargs):
+        account = self.get_object()
+        account.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 
 class TotalAccountBalanceView(APIView):
     permission_classes = [IsAuthenticated]
@@ -147,33 +168,25 @@ class TotalDebtView(APIView):
     def get(self, request):
         total_debt = Debt.objects.filter(user=request.user).aggregate(Sum('amount'))['amount__sum'] or 0
         return Response({'total_debt': total_debt})
-    
+
+
 class DebtRepaymentListCreateView(generics.ListCreateAPIView):
+    queryset = DebtRepayment.objects.all()
     serializer_class = DebtRepaymentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return DebtRepayment.objects.filter(user=self.request.user)
-
-    def perform_create(self, serializer):
         user = self.request.user
-        debt = serializer.validated_data['debt']  # Access the debt from validated data
+        return self.queryset.filter(user=user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
 
         
-        if debt.user != user:
-            raise serializers.ValidationError("You cannot repay a debt that does not belong to you.")
-
-        repayment = serializer.save(user=user)
-
-        
-        debt.amount -= repayment.amount  
-
-        if debt.amount <= 0:
-            debt.amount = 0  
-            debt.status = 'paid'
-
-        debt.save() 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 
 
 
@@ -350,3 +363,102 @@ class ChatViewSet(viewsets.ViewSet):
             return "You have no financial goals."
         goal_list = "\n".join(f"{goal.description}: {goal.amount_needed} in {goal.duration_weeks} weeks" for goal in goals)
         return f"Your financial goals:\n{goal_list}"
+
+
+
+
+
+
+
+
+from django.db.models.functions import TruncMonth
+from django.utils import timezone
+from datetime import datetime, timedelta
+
+
+class GenerateMonthlyFinancialReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Get the year and month parameters
+        year = request.query_params.get('year', timezone.now().year)
+        month = request.query_params.get('month', None)
+
+        # Determine the date range based on the year and month
+        if month is not None:
+            start_date = datetime(int(year), int(month), 1)
+            end_date = (start_date + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        else:
+            start_date = datetime(int(year), 1, 1)
+            end_date = datetime(int(year), 12, 31)
+
+        # Get user
+        user = request.user
+
+        # Find the earliest transaction date within the specified range
+        earliest_transaction = Transaction.objects.filter(
+            user=user,
+            date__range=[start_date, end_date]
+        ).order_by('date').first()
+
+        if earliest_transaction:
+            # Adjust the start_date to the first day of the month of the earliest transaction
+            start_date = earliest_transaction.date.replace(day=1)
+        else:
+            # If no transactions found, handle gracefully
+            return Response({'message': 'No transactions found for the specified period.'}, status=404)
+
+        # Query for monthly income totals
+        income_totals = Transaction.objects.filter(
+            user=user,
+            type="income",
+            date__range=[start_date, end_date]
+        ).annotate(month=TruncMonth('date')).values('month').annotate(total=Sum('amount')).order_by('month')
+
+        # Query for monthly expense totals
+        expense_totals = Transaction.objects.filter(
+            user=user,
+            type="expense",
+            date__range=[start_date, end_date]
+        ).annotate(month=TruncMonth('date')).values('month').annotate(total=Sum('amount')).order_by('month')
+
+        # Convert query results to a dictionary for easier processing
+        income_dict = {item['month'].strftime('%Y-%m'): item['total'] for item in income_totals}
+        expense_dict = {item['month'].strftime('%Y-%m'): item['total'] for item in expense_totals}
+
+        # Generate the monthly report
+        report = {
+            'period': {'startDate': start_date.strftime('%Y-%m-%d'), 'endDate': end_date.strftime('%Y-%m-%d')},
+            'monthlyReports': [],
+        }
+
+        # Month names for reporting
+        month_names = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ]
+
+        # Iterate over the months in the range to populate the report
+        current_month = start_date
+        while current_month <= end_date:
+            month_str = current_month.strftime('%Y-%m')
+            month_name = month_names[current_month.month - 1]  # Adjust for zero-based index
+            income = income_dict.get(month_str, 0)
+            expenses = expense_dict.get(month_str, 0)
+            net_savings = income - expenses
+
+            report['monthlyReports'].append({
+                'month': month_name,
+                'year': current_month.year,
+                'income': income,
+                'expenses': expenses,
+                'netSavings': net_savings,
+            })
+
+            # Move to the next month
+            if current_month.month == 12:
+                current_month = current_month.replace(year=current_month.year + 1, month=1)
+            else:
+                current_month = current_month.replace(month=current_month.month + 1)
+
+        return Response(report)

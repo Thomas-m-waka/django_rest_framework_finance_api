@@ -4,13 +4,30 @@ from .models import *
 from  .serializers import *
 from  datetime import date
 from rest_framework import serializers
-
+from django.db import IntegrityError
+from django.urls import reverse
 
 class AccountSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
     class Meta:
         model = Account
-        fields = '__all__'
+        fields = ['id', 'account_number', 'account_type', 'bank_name', 'amount', 'user', 'url']
         read_only_fields = ['user']
+
+    def create(self, validated_data):
+        user = validated_data['user']  
+
+        try:
+            account = Account.objects.create(**validated_data)
+            return account
+        except IntegrityError:
+            raise serializers.ValidationError("You already have an account of this type.")
+
+    def get_url(self, obj):
+        request = self.context.get('request')
+        url = request.build_absolute_uri(reverse('account-detail', kwargs={'pk': obj.pk}))
+        return url
 
 
 
@@ -65,7 +82,7 @@ class AccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
         fields = '__all__'
-        read_only_fields = ['user']
+        read_only_fields = ['id','user']
 
 
 class TotalBalanceSerializer(serializers.Serializer):
@@ -73,20 +90,39 @@ class TotalBalanceSerializer(serializers.Serializer):
     read_only_fields = ['user']
 
 class TransactionSerializer(serializers.ModelSerializer):
+    account_number = serializers.CharField(write_only=True)
+
     class Meta:
         model = Transaction
-        fields = ['id', 'user', 'account', 'amount', 'transaction_type', 'category','description', 'date']
-        read_only_fields = ['user', 'date']
+        fields = ['account_number', 'amount', 'transaction_type', 'category', 'description']
 
-    def validate(self, attrs):
-        account = attrs.get('account')
-        amount = attrs.get('amount')
-        transaction_type = attrs.get('transaction_type')
+    def validate(self, data):
+        if data['transaction_type'] == 'income' and data['category'] not in dict(Transaction.INCOME_CATEGORIES):
+            raise serializers.ValidationError("Invalid category for income.")
+        elif data['transaction_type'] == 'expense' and data['category'] not in dict(Transaction.EXPENSE_CATEGORIES):
+            raise serializers.ValidationError("Invalid category for expense.")
+        
+        
+        try:
+            account = Account.objects.get(account_number=data['account_number'], user=self.context['request'].user)
+        except Account.DoesNotExist:
+            raise serializers.ValidationError("Account not found for the user.")
+        
+        data['account'] = account
 
-        if transaction_type == 'expense' and amount > account.amount:
-            raise serializers.ValidationError("Insufficient funds in the selected account for this expense.")
+        return data
 
-        return attrs
+    def create(self, validated_data):
+        account_number = validated_data.pop('account_number')
+
+        
+        transaction = Transaction.objects.create(**validated_data)
+
+        return transaction
+
+
+
+
 
 
 
@@ -105,36 +141,67 @@ class DebtSerializer(serializers.ModelSerializer):
         return value
 
 class DebtRepaymentSerializer(serializers.ModelSerializer):
+    debt_name = serializers.CharField(write_only=True)  
+    account_number = serializers.CharField(write_only=True)  
+
     class Meta:
         model = DebtRepayment
-        fields = ['debt', 'account', 'amount']
-
-    def __init__(self, *args, **kwargs):
-        user = kwargs.pop('user', None) 
-        super().__init__(*args, **kwargs)
-        if user:
-            self.fields['account'].queryset = Account.objects.filter(user=user)
-
-    def validate_account(self, value):
-        user = self.context['request'].user
-        if value.user != user:
-            raise serializers.ValidationError("You can only use your own account for this repayment.")
-        return value
+        fields = ['debt_name', 'account_number', 'amount', 'user']  
 
     def validate(self, data):
-        debt = data['debt']
-        if not Debt.objects.filter(id=debt.id).exists():
-            raise serializers.ValidationError("Debt does not exist.")
+        user = self.context['request'].user
+        
+        try:
+            debt = Debt.objects.get(name=data['debt_name'], user=user)
+        except Debt.DoesNotExist:
+            raise serializers.ValidationError("Debt not found for the user.")
+
+        try:
+            account = Account.objects.get(account_number=data['account_number'], user=user)
+        except Account.DoesNotExist:
+            raise serializers.ValidationError("Account not found for the user.")
 
         
-        if not Account.objects.filter(id=data['account'].id, user=self.context['request'].user).exists():
-            raise serializers.ValidationError("You can only repay using your own account.")
-        
-        
-        if data['amount'] > debt.amount:
-            raise serializers.ValidationError("Repayment amount cannot exceed the remaining debt amount.")
-        
+        if data['amount'] > account.amount:
+            raise serializers.ValidationError("Insufficient funds in the selected account.")
+
+        data['debt'] = debt
+        data['account'] = account
+
         return data
+
+    def create(self, validated_data):
+        debt_name = validated_data.pop('debt_name')
+        account_number = validated_data.pop('account_number')
+
+        
+        user = self.context['request'].user
+        
+        
+        debt = Debt.objects.get(name=debt_name, user=user)
+        account = Account.objects.get(account_number=account_number, user=user)
+
+        
+        repayment = DebtRepayment.objects.create(
+            debt=debt,
+            account=account,
+            amount=validated_data['amount'],  
+            user=user  
+        )
+
+
+        account.save()
+        debt.amount -= validated_data['amount']
+        debt.save()
+
+        return repayment
+
+
+
+
+
+
+
 
 
 
