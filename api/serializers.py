@@ -94,7 +94,7 @@ class DebtSerializer(serializers.ModelSerializer):
     class Meta:
         model = Debt
         fields = '__all__'
-        read_only_fields = ['user']
+        read_only_fields = ['user','date_created']
     def validate_debt(self, value):
         if value.user != self.context['request'].user:
             raise serializers.ValidationError("You do not have permission to repay this debt.")
@@ -145,7 +145,7 @@ class FinancialGoalSerializer(serializers.ModelSerializer):
     class Meta:
         model = FinancialGoal
         fields = '__all__'
-        read_only_fields = ['user']
+        read_only_fields = ['user','date_created']
     def validate_amount(self, value):
         if value <= 0:
             raise serializers.ValidationError("The amount must be a positive integer.")
@@ -170,4 +170,31 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return value
 
 
+class ProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Profile
+        fields = ['phone_number'] 
 
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = ['username', 'email', 'phone_number']
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'user', 'frequency',  'date_created', 'is_sent']
+        read_only_fields = ['user','date_created']
+
+
+
+from rest_framework import serializers
+
+class FinancialBotInputSerializer(serializers.Serializer):
+    query = serializers.CharField(max_length=1000, required=True)

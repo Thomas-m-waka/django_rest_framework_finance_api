@@ -149,3 +149,4 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL')
 
 GEMINI_API_KEY = os.environ.get('GERMINI_API_KEY')
 
+SMS_API_KEY = os.environ.get('SMS_API_KEY')

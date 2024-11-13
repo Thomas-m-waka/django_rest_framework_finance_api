@@ -6,3 +6,5 @@ db.sqlite3/
 .venv 
 env/ 
 venv/ 
+bot.py/
+v2.py

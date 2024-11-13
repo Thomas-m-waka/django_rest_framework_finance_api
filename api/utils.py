@@ -1,4 +1,3 @@
-# api/utils.py
 
 from django.db.models import Sum
 from .models import Transaction

@@ -57,6 +57,7 @@ class Account(models.Model):
     account_type = models.CharField(max_length=10, choices=ACCOUNT_TYPES)
     bank_name = models.CharField(max_length=50, choices=BANKS, blank=True)  
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, validators=[MinValueValidator(0)])
+    date_created = models.DateTimeField(auto_now_add=True,blank=True)
 
     def __str__(self):
         return f"{self.account_type.capitalize()} - {self.bank_name or 'N/A'} (Amount: {self.amount})"
@@ -135,6 +136,7 @@ class Debt(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     debt_type = models.CharField(max_length=50, choices=DEBT_TYPES)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
+    date_created = models.DateTimeField(auto_now_add=True,blank=True)
 
     def __str__(self):
         return f"{self.user.username} - {self.amount} ({self.debt_type})"
@@ -182,10 +184,29 @@ class FinancialGoal(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='financial_goals')
     amount_needed = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    duration_weeks = models.PositiveIntegerField()
+    duration_months = models.PositiveIntegerField()
     description = models.CharField(max_length=255)
     goal_type = models.CharField(max_length=10, choices=GOAL_TYPES)
+    date_created = models.DateTimeField(auto_now_add=True,blank=True)
 
     def __str__(self):
-        return f"{self.description} - {self.amount_needed} over {self.duration_weeks} weeks"
+        return f"{self.description} - {self.amount_needed} over {self.duration_months} months "
 
+
+NOTIFICATION_FREQUENCY_CHOICES = [
+   ('daily', 'Daily'),
+    ('weekly', 'Weekly'),
+    ('monthly', 'Monthly'),
+    ('never', 'Never')
+]
+
+class Notification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    frequency = models.CharField(max_length=10, choices=NOTIFICATION_FREQUENCY_CHOICES)
+    date_created = models.DateTimeField(auto_now_add=True)
+    is_sent = models.BooleanField(default=False)  
+    last_sent = models.DateTimeField(null=True, blank=True)  
+    next_send = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Notification for {self.user.username}, frequency: {self.frequency}"
