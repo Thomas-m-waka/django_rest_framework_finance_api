@@ -26,6 +26,7 @@ from django.conf import settings
 from rest_framework import viewsets
 from django.conf import settings
 import google.generativeai as genai
+import requests 
 
 
 
@@ -47,6 +48,13 @@ class RegistrationView(generics.CreateAPIView):
         }, status=status.HTTP_201_CREATED)
 
 
+
+class ProfileRetrieveUpdateView(generics.RetrieveUpdateAPIView):
+    serializer_class = ProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user.profile
 
 
 
@@ -193,14 +201,18 @@ class FinancialSummaryView(APIView):
         })
     
 
-
+from rest_framework.authentication import TokenAuthentication
 
 class FinancialGoalListCreateView(generics.ListCreateAPIView):
     serializer_class = FinancialGoalSerializer
     permission_classes = [IsAuthenticated]
+   
 
     def get_queryset(self):
         return FinancialGoal.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 class FinancialGoalDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = FinancialGoalSerializer
@@ -274,6 +286,83 @@ class PasswordResetConfirmView(generics.GenericAPIView):
 
 
 
+
+
+
+class SendNotificationAPIView(APIView):
+    """
+    Send a notification to the user with a constant message.
+    """
+    def post(self, request, notification_id):
+        try:
+            # Fetch the Notification instance by ID
+            notification = Notification.objects.get(id=notification_id)
+
+            # Check if the notification frequency is set to 'never'
+            if notification.frequency == 'never':
+                return Response({'error': 'User has unsubscribed from notifications (frequency is set to "never")'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Check if the notification has already been sent
+            if notification.is_sent:
+                return Response({'error': 'Notification already sent'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Constant message to be sent to the user
+            message = "Track your expenses effortlessly with our FinancAI. Get insights, set budgets—all in one place. Let’s make managing money easy!"
+
+            # Get user's phone number (ensure it's a string)
+            phone_number = str(notification.user.profile.phone_number)  # Make sure to convert to string
+
+            # Ensure phone number is correctly formatted (with country code)
+            if not phone_number.startswith('+'):
+                phone_number = f'+254{phone_number}'  # Example: add country code if not present
+
+            # Prepare payload for SMS API
+            payload = {
+                "mobile": phone_number,
+                "response_type": "json",
+                "partnerID": '10338',  # Your partner ID
+                "shortcode": 'TextSMS',  # Your shortcode
+                "apikey": settings.SMS_API_KEY,  # Your API key
+                "message": message  # The constant message
+            }
+
+            # Send the SMS via API
+            response = requests.post("https://sms.textsms.co.ke/api/services/sendsms", json=payload)
+
+            # Check if the SMS was sent successfully
+            if response.status_code == 200:
+                # Mark the notification as sent
+                notification.is_sent = True
+                notification.save()
+                return Response({'success': 'SMS sent successfully!'}, status=status.HTTP_200_OK)
+            else:
+                return Response({'error': f'Failed to send SMS. {response.text}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification not found'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class UnsubscribeNotificationAPIView(APIView):
+    def post(self, request, user_id):
+        try:
+            notification = Notification.objects.get(user_id=user_id)
+
+            
+            notification.frequency = 'never'
+            notification.is_sent = False  
+            notification.save()
+
+            return Response({'message': 'You have successfully unsubscribed from notifications.'},
+                            status=status.HTTP_200_OK)
+
+        except Notification.DoesNotExist:
+            return Response({'error': 'Notification settings not found for this user.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
@@ -350,3 +439,12 @@ class ChatViewSet(viewsets.ViewSet):
             return "You have no financial goals."
         goal_list = "\n".join(f"{goal.description}: {goal.amount_needed} in {goal.duration_weeks} weeks" for goal in goals)
         return f"Your financial goals:\n{goal_list}"
+
+
+
+
+
+
+
+
+

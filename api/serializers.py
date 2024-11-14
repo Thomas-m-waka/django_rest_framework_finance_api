@@ -4,30 +4,13 @@ from .models import *
 from  .serializers import *
 from  datetime import date
 from rest_framework import serializers
-from django.db import IntegrityError
-from django.urls import reverse
+
 
 class AccountSerializer(serializers.ModelSerializer):
-    url = serializers.SerializerMethodField()
-
     class Meta:
         model = Account
-        fields = ['id', 'account_number', 'account_type', 'bank_name', 'amount', 'user', 'url']
+        fields = '__all__'
         read_only_fields = ['user']
-
-    def create(self, validated_data):
-        user = validated_data['user']  
-
-        try:
-            account = Account.objects.create(**validated_data)
-            return account
-        except IntegrityError:
-            raise serializers.ValidationError("You already have an account of this type.")
-
-    def get_url(self, obj):
-        request = self.context.get('request')
-        url = request.build_absolute_uri(reverse('account-detail', kwargs={'pk': obj.pk}))
-        return url
 
 
 
@@ -82,7 +65,7 @@ class AccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
         fields = '__all__'
-        read_only_fields = ['id','user']
+        read_only_fields = ['user']
 
 
 class TotalBalanceSerializer(serializers.Serializer):
@@ -90,45 +73,20 @@ class TotalBalanceSerializer(serializers.Serializer):
     read_only_fields = ['user']
 
 class TransactionSerializer(serializers.ModelSerializer):
-    account_number = serializers.CharField(write_only=True)
-
     class Meta:
         model = Transaction
-        fields = ['account_number', 'amount', 'transaction_type', 'category', 'description']
+        fields = ['id', 'user', 'account', 'amount', 'transaction_type', 'category','description', 'date']
+        read_only_fields = ['user', 'date']
 
-    def validate(self, data):
-        print(data)
-        if data['transaction_type'] == 'income' and data['category'] not in dict(Transaction.INCOME_CATEGORIES):
-            print("Transactiontype income")
-            raise serializers.ValidationError("Invalid category for income.")
-        elif data['transaction_type'] == 'expense' and data['category'] not in dict(Transaction.EXPENSE_CATEGORIES):
-            print("Transactiontype expense")
-            
-            raise serializers.ValidationError("Invalid category for expense.")
-        
-        
-        try:
-            account = Account.objects.get(account_number=data['account_number'], user=self.context['request'].user)
-        except Account.DoesNotExist:
-            print("Account not found ")
-            
-            raise serializers.ValidationError("Account not found for the user.")
-        
-        data['account'] = account
+    def validate(self, attrs):
+        account = attrs.get('account')
+        amount = attrs.get('amount')
+        transaction_type = attrs.get('transaction_type')
 
-        return data
+        if transaction_type == 'expense' and amount > account.amount:
+            raise serializers.ValidationError("Insufficient funds in the selected account for this expense.")
 
-    def create(self, validated_data):
-        account_number = validated_data.pop('account_number')
-
-        
-        transaction = Transaction.objects.create(**validated_data)
-
-        return transaction
-
-
-
-
+        return attrs
 
 
 
@@ -136,7 +94,7 @@ class DebtSerializer(serializers.ModelSerializer):
     class Meta:
         model = Debt
         fields = '__all__'
-        read_only_fields = ['user']
+        read_only_fields = ['user','date_created']
     def validate_debt(self, value):
         if value.user != self.context['request'].user:
             raise serializers.ValidationError("You do not have permission to repay this debt.")
@@ -147,67 +105,36 @@ class DebtSerializer(serializers.ModelSerializer):
         return value
 
 class DebtRepaymentSerializer(serializers.ModelSerializer):
-    debt_name = serializers.CharField(write_only=True)  
-    account_number = serializers.CharField(write_only=True)  
-
     class Meta:
         model = DebtRepayment
-        fields = ['debt_name', 'account_number', 'amount', 'user']  
+        fields = ['debt', 'account', 'amount']
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None) 
+        super().__init__(*args, **kwargs)
+        if user:
+            self.fields['account'].queryset = Account.objects.filter(user=user)
+
+    def validate_account(self, value):
+        user = self.context['request'].user
+        if value.user != user:
+            raise serializers.ValidationError("You can only use your own account for this repayment.")
+        return value
 
     def validate(self, data):
-        user = self.context['request'].user
-        
-        try:
-            debt = Debt.objects.get(name=data['debt_name'], user=user)
-        except Debt.DoesNotExist:
-            raise serializers.ValidationError("Debt not found for the user.")
-
-        try:
-            account = Account.objects.get(account_number=data['account_number'], user=user)
-        except Account.DoesNotExist:
-            raise serializers.ValidationError("Account not found for the user.")
+        debt = data['debt']
+        if not Debt.objects.filter(id=debt.id).exists():
+            raise serializers.ValidationError("Debt does not exist.")
 
         
-        if data['amount'] > account.amount:
-            raise serializers.ValidationError("Insufficient funds in the selected account.")
-
-        data['debt'] = debt
-        data['account'] = account
-
+        if not Account.objects.filter(id=data['account'].id, user=self.context['request'].user).exists():
+            raise serializers.ValidationError("You can only repay using your own account.")
+        
+        
+        if data['amount'] > debt.amount:
+            raise serializers.ValidationError("Repayment amount cannot exceed the remaining debt amount.")
+        
         return data
-
-    def create(self, validated_data):
-        debt_name = validated_data.pop('debt_name')
-        account_number = validated_data.pop('account_number')
-
-        
-        user = self.context['request'].user
-        
-        
-        debt = Debt.objects.get(name=debt_name, user=user)
-        account = Account.objects.get(account_number=account_number, user=user)
-
-        
-        repayment = DebtRepayment.objects.create(
-            debt=debt,
-            account=account,
-            amount=validated_data['amount'],  
-            user=user  
-        )
-
-
-        account.save()
-        debt.amount -= validated_data['amount']
-        debt.save()
-
-        return repayment
-
-
-
-
-
-
-
 
 
 
@@ -218,7 +145,7 @@ class FinancialGoalSerializer(serializers.ModelSerializer):
     class Meta:
         model = FinancialGoal
         fields = '__all__'
-        read_only_fields = ['user']
+        read_only_fields = ['user','date_created']
     def validate_amount(self, value):
         if value <= 0:
             raise serializers.ValidationError("The amount must be a positive integer.")
@@ -241,3 +168,33 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         if len(value) < 8:  
             raise serializers.ValidationError("Password must be at least 8 characters long.")
         return value
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Profile
+        fields = ['phone_number'] 
+
+
+
+class ProfileSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
+
+    class Meta:
+        model = Profile
+        fields = ['username', 'email', 'phone_number']
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'user', 'frequency',  'date_created', 'is_sent']
+        read_only_fields = ['user','date_created']
+
+
+
+from rest_framework import serializers
+
+class FinancialBotInputSerializer(serializers.Serializer):
+    query = serializers.CharField(max_length=1000, required=True)
